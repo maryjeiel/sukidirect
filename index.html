@@ -1,0 +1,1422 @@
+<!doctype html>
+<html lang="fil">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>SukiDirect</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0F4C3A" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>html,body{margin:0;background:#F4EFE3} #root{max-width:480px;margin:0 auto;min-height:100vh}</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// localStorage shim matching the artifact storage API
+window.storage = {
+  async get(key) { const v = localStorage.getItem("kv:" + key); if (v === null) throw new Error("not found"); return { key, value: v }; },
+  async set(key, value) { localStorage.setItem("kv:" + key, value); return { key, value }; },
+  async delete(key) { localStorage.removeItem("kv:" + key); return { key, deleted: true }; },
+  async list(prefix = "") { const keys = []; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("kv:" + prefix)) keys.push(k.slice(3)); } return { keys }; },
+};
+</script>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useRef } = React;
+
+// ---------- catalog: manufacturer-direct pricing (per piece) ----------
+const CATALOG = [
+  { id: "lm-canton", name: "Pancit Canton Original", brand: "Lucky Me!", cat: "Noodles", emoji: "🍜", pack: 24, unit: "24 pcs / case", direct: 13.1, wholesale: 14.6, srp: 18, moq: 1 },
+  { id: "lm-chilimansi", name: "Pancit Canton Chilimansi", brand: "Lucky Me!", cat: "Noodles", emoji: "🍜", pack: 24, unit: "24 pcs / case", direct: 13.1, wholesale: 14.6, srp: 18, moq: 1 },
+  { id: "kopiko-blanca", name: "Kopiko Blanca 30g", brand: "Kopiko", cat: "Coffee", emoji: "☕", pack: 30, unit: "30 sachets / bag", direct: 7.4, wholesale: 8.3, srp: 11, moq: 1 },
+  { id: "gt-white", name: "Great Taste White Twin", brand: "URC", cat: "Coffee", emoji: "☕", pack: 30, unit: "30 twins / bag", direct: 9.2, wholesale: 10.4, srp: 13, moq: 1 },
+  { id: "nescafe-3in1", name: "Nescafé 3-in-1 Original", brand: "Nestlé", cat: "Coffee", emoji: "☕", pack: 30, unit: "30 sticks / bag", direct: 7.9, wholesale: 8.9, srp: 12, moq: 1 },
+  { id: "bearbrand-33", name: "Bear Brand Fortified 33g", brand: "Nestlé", cat: "Milk", emoji: "🥛", pack: 24, unit: "24 sachets / box", direct: 11.8, wholesale: 13.2, srp: 16, moq: 1 },
+  { id: "milo-24", name: "Milo Activ-Go 24g", brand: "Nestlé", cat: "Milk", emoji: "🥛", pack: 24, unit: "24 sachets / box", direct: 10.6, wholesale: 11.9, srp: 15, moq: 1 },
+  { id: "coke-sakto", name: "Coke Sakto 190ml", brand: "Coca-Cola", cat: "Drinks", emoji: "🥤", pack: 24, unit: "24 bottles / case", direct: 9.8, wholesale: 11.0, srp: 15, moq: 1 },
+  { id: "c2-230", name: "C2 Apple 230ml", brand: "URC", cat: "Drinks", emoji: "🥤", pack: 24, unit: "24 bottles / case", direct: 12.4, wholesale: 13.9, srp: 18, moq: 1 },
+  { id: "surf-65", name: "Surf Powder 65g", brand: "Unilever", cat: "Home care", emoji: "🧺", pack: 48, unit: "48 sachets / case", direct: 6.3, wholesale: 7.2, srp: 10, moq: 1 },
+  { id: "zonrox-100", name: "Zonrox Original 100ml", brand: "Green Cross", cat: "Home care", emoji: "🧺", pack: 24, unit: "24 pcs / case", direct: 9.1, wholesale: 10.3, srp: 14, moq: 1 },
+  { id: "safeguard-60", name: "Safeguard White 60g", brand: "P&G", cat: "Personal care", emoji: "🧼", pack: 36, unit: "36 bars / case", direct: 21.5, wholesale: 24.0, srp: 30, moq: 1 },
+  { id: "palmolive-15", name: "Palmolive Shampoo 15ml", brand: "Colgate", cat: "Personal care", emoji: "🧼", pack: 72, unit: "6 doz sachets / box", direct: 4.6, wholesale: 5.3, srp: 8, moq: 1 },
+  { id: "piattos-40", name: "Piattos Cheese 40g", brand: "Jack 'n Jill", cat: "Snacks", emoji: "🍘", pack: 25, unit: "25 packs / case", direct: 14.2, wholesale: 16.0, srp: 21, moq: 1 },
+  { id: "boybawang-90", name: "Boy Bawang Garlic 90g", brand: "KSK", cat: "Snacks", emoji: "🍘", pack: 20, unit: "20 packs / case", direct: 15.8, wholesale: 17.6, srp: 23, moq: 1 },
+  { id: "skyflakes-25", name: "SkyFlakes 25g", brand: "M.Y. San", cat: "Snacks", emoji: "🍘", pack: 30, unit: "30 packs / case", direct: 5.9, wholesale: 6.8, srp: 9, moq: 1 },
+  { id: "century-155", name: "Century Tuna Flakes 155g", brand: "Century", cat: "Canned", emoji: "🥫", pack: 24, unit: "24 cans / case", direct: 27.5, wholesale: 30.5, srp: 38, moq: 1 },
+  { id: "argentina-150", name: "Argentina Corned Beef 150g", brand: "Argentina", cat: "Canned", emoji: "🥫", pack: 24, unit: "24 cans / case", direct: 23.9, wholesale: 26.6, srp: 33, moq: 1 },
+];
+
+const CATS = ["Lahat", "Noodles", "Coffee", "Milk", "Drinks", "Snacks", "Canned", "Home care", "Personal care"];
+
+// starting shelf: stock on hand + average pieces sold per day
+const SEED_INVENTORY = [
+  { id: "lm-canton", stock: 9, rate: 8.5 },
+  { id: "kopiko-blanca", stock: 14, rate: 6.2 },
+  { id: "bearbrand-33", stock: 5, rate: 4.8 },
+  { id: "coke-sakto", stock: 31, rate: 5.5 },
+  { id: "surf-65", stock: 22, rate: 7.1 },
+  { id: "piattos-40", stock: 40, rate: 2.1 },
+  { id: "skyflakes-25", stock: 12, rate: 3.4 },
+  { id: "century-155", stock: 18, rate: 1.2 },
+  { id: "safeguard-60", stock: 6, rate: 1.8 },
+  { id: "milo-24", stock: 3, rate: 4.1 },
+];
+
+const WALLETS = [
+  { id: "gcash", name: "GCash", color: "#0071E3", letter: "G", balance: 8420.5 },
+  { id: "maya", name: "Maya", color: "#0B0B0B", letter: "M", balance: 3150.0 },
+  { id: "gotyme", name: "GoTyme", color: "#00A8A8", letter: "Gt", balance: 5600.75 },
+];
+
+// big-ticket items available on hulugan (BNPL): 20% down, 6 months, 3%/mo add-on
+const BNPL_ITEMS = [
+  { id: "redmi14c", name: "Xiaomi Redmi 14C 128GB", emoji: "📱", price: 5999, why: "Pang-load business at GCash transactions" },
+  { id: "realme-c67", name: "realme C67 256GB", emoji: "📱", price: 7499, why: "Pang-tindahan at pang-aral ng mga bata" },
+  { id: "galaxy-a16", name: "Samsung Galaxy A16 5G", emoji: "📱", price: 9990, why: "5G para sa e-wallet at inventory app" },
+  { id: "printer", name: "Thermal receipt printer", emoji: "🧾", price: 2499, why: "Resibo para sa mga suki at utang list" },
+  { id: "freezer", name: "Chest freezer 5.3 cu ft", emoji: "🧊", price: 13995, why: "Ice, frozen goods, mas malaking tubo" },
+  { id: "solar", name: "Solar power station 500W", emoji: "🔆", price: 8500, why: "Tuloy ang benta kahit brownout" },
+];
+
+const INSURANCE = [
+  { id: "tindahan-protect", name: "Tindahan Protect", emoji: "🔥", cover: 50000, premium: 120, desc: "Sunog, nakawan, baha. Hanggang ₱50k na paninda at gamit." },
+  { id: "hospi-cash", name: "Hospi Cash", emoji: "🏥", cover: 20000, premium: 99, desc: "₱1,000 kada araw na naka-confine, hanggang 20 araw." },
+  { id: "buhay-plan", name: "Buhay Plan", emoji: "🕊️", cover: 100000, premium: 150, desc: "Life insurance para sa pamilya, ₱100k benepisyo." },
+];
+
+const BNPL_MONTHS = 6;
+const BNPL_ADDON = 0.03; // per month
+const LOAN_FEE = 0.05; // flat, 4 weekly payments
+
+const peso = (n) =>
+  "₱" + n.toLocaleString("en-PH", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+const r2 = (n) => Math.round(n * 100) / 100;
+
+const byId = Object.fromEntries(CATALOG.map((p) => [p.id, p]));
+
+const DEFAULT_STATE = {
+  onboarded: false,
+  store: { name: "", owner: "", barangay: "" },
+  wallets: {}, // id -> { linked, balance }
+  inventory: SEED_INVENTORY,
+  orders: [],
+  savedTotal: 0,
+  ledger: [], // { when, type, label, amount } amount: + pasok, − labas
+  phpc: 0, // SukiWallet stablecoin balance (₱-pegged, on-chain)
+  policies: [], // active insurance
+  loans: [], // { id, principal, balance, weekly, paymentsLeft }
+  bnpl: [], // { id, itemId, monthly, monthsLeft, paid, total }
+};
+
+function SukiDirect() {
+  const [state, setState] = useState(DEFAULT_STATE);
+  const [loaded, setLoaded] = useState(false);
+  const [tab, setTab] = useState("home");
+  const [cart, setCart] = useState({}); // id -> cases
+  const [cartOpen, setCartOpen] = useState(false);
+  const [payFor, setPayFor] = useState(null); // pending order awaiting payment
+  const [toast, setToast] = useState(null);
+  const saveTimer = useRef(null);
+
+  // ---------- persistence ----------
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await window.storage.get("sukidirect:v1");
+        if (r?.value) setState({ ...DEFAULT_STATE, ...JSON.parse(r.value) });
+      } catch (e) {
+        /* first run */
+      }
+      setLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      try {
+        await window.storage.set("sukidirect:v1", JSON.stringify(state));
+      } catch (e) {
+        /* storage unavailable; app still works in-memory */
+      }
+    }, 400);
+  }, [state, loaded]);
+
+  const say = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2200);
+  };
+
+  // ---------- derived ----------
+  const inv = state.inventory.map((row) => {
+    const p = byId[row.id];
+    const cover = row.rate > 0 ? row.stock / row.rate : 99;
+    return { ...row, p, cover };
+  });
+  const fastMovers = [...inv].sort((a, b) => b.rate - a.rate);
+  const alerts = inv.filter((r) => r.cover < 4).sort((a, b) => a.cover - b.cover);
+
+  const cartLines = Object.entries(cart)
+    .filter(([, c]) => c > 0)
+    .map(([id, cases]) => {
+      const p = byId[id];
+      const pieces = cases * p.pack;
+      return { p, cases, pieces, cost: pieces * p.direct, save: pieces * (p.wholesale - p.direct) };
+    });
+  const cartCost = cartLines.reduce((s, l) => s + l.cost, 0);
+  const cartSave = cartLines.reduce((s, l) => s + l.save, 0);
+  const cartCases = cartLines.reduce((s, l) => s + l.cases, 0);
+
+  // suggested reorder: bring fast movers back to ~10 days of cover, rounded to cases
+  const suggestCases = (row) => {
+    const need = Math.max(0, row.rate * 10 - row.stock);
+    return Math.max(1, Math.ceil(need / byId[row.id].pack));
+  };
+
+  const addCases = (id, n) =>
+    setCart((c) => ({ ...c, [id]: Math.max(0, (c[id] || 0) + n) }));
+
+  const adjustStock = (id, d) =>
+    setState((s) => ({
+      ...s,
+      inventory: s.inventory.map((r) => (r.id === id ? { ...r, stock: Math.max(0, r.stock + d) } : r)),
+    }));
+
+  const logSale = (id) => {
+    const p = byId[id];
+    setState((s) => ({
+      ...s,
+      ledger: [
+        { when: new Date().toISOString(), type: "sale", label: `Benta: ${p.name}`, amount: p.srp, tubo: p.srp - p.direct },
+        ...s.ledger,
+      ].slice(0, 500),
+      inventory: s.inventory.map((r) =>
+        r.id === id ? { ...r, stock: Math.max(0, r.stock - 1), rate: Math.round((r.rate * 0.97 + 1 * 0.6) * 10) / 10 } : r
+      ),
+    }));
+  };
+
+  // ---------- checkout ----------
+  const linkedWallets = WALLETS.filter((w) => state.wallets[w.id]?.linked);
+
+  const startCheckout = (fulfillment) => {
+    const fee = fulfillment === "delivery" ? (cartCost >= 3000 ? 0 : 49) : 0;
+    setPayFor({
+      lines: cartLines.map((l) => ({ id: l.p.id, cases: l.cases, pieces: l.pieces, cost: l.cost, save: l.save })),
+      subtotal: cartCost,
+      fee,
+      total: cartCost + fee,
+      save: cartSave,
+      fulfillment,
+      wallet: linkedWallets[0]?.id || null,
+    });
+  };
+
+  const confirmPay = () => {
+    const o = payFor;
+    const w = state.wallets[o.wallet];
+    if (!w || w.balance < o.total) {
+      say("Not enough balance sa wallet");
+      return;
+    }
+    const order = {
+      ref: "SD-" + Math.random().toString(36).slice(2, 7).toUpperCase(),
+      when: new Date().toISOString(),
+      ...o,
+      status: "processing",
+    };
+    setState((s) => ({
+      ...s,
+      wallets: { ...s.wallets, [o.wallet]: { ...w, balance: Math.round((w.balance - o.total) * 100) / 100 } },
+      orders: [order, ...s.orders],
+      savedTotal: Math.round((s.savedTotal + o.save) * 100) / 100,
+      ledger: [
+        { when: new Date().toISOString(), type: "order", label: `Order ${order.ref} (puhunan)`, amount: -o.total },
+        ...s.ledger,
+      ].slice(0, 500),
+    }));
+    setCart({});
+    setCartOpen(false);
+    setPayFor(null);
+    setTab("orders");
+    say(`Paid ${peso(o.total)} · order ${order.ref} placed`);
+  };
+
+  // ---------- finance: Suki Score, SukiWallet (PHPC), loans, insurance, BNPL ----------
+  const salesLogged = state.ledger.filter((e) => e.type === "sale").length;
+  const repayments = state.ledger.filter((e) => e.type === "loan-pay" || e.type === "bnpl-pay").length;
+  const sukiScore = Math.min(
+    850,
+    520 +
+      Math.min(120, state.orders.length * 20) +
+      Math.min(80, salesLogged * 2) +
+      Math.min(60, state.policies.length * 20) +
+      Math.min(70, repayments * 10)
+  );
+  const creditLimit = sukiScore >= 700 ? 30000 : sukiScore >= 650 ? 15000 : sukiScore >= 600 ? 8000 : sukiScore >= 560 ? 4000 : 0;
+  const creditUsed =
+    state.loans.reduce((s, l) => s + l.balance, 0) +
+    state.bnpl.reduce((s, b) => s + b.monthly * b.monthsLeft, 0);
+  const creditFree = Math.max(0, creditLimit - creditUsed);
+
+  const addLedger = (entry) => (s) => ({
+    ...s,
+    ledger: [{ when: new Date().toISOString(), ...entry }, ...s.ledger].slice(0, 500),
+  });
+
+  // move money e-wallet ↔ PHPC (the on-chain rail everything else settles on)
+  const cashIn = (walletId, amt) => {
+    const w = state.wallets[walletId];
+    if (!w || w.balance < amt) return say("Kulang ang balance");
+    setState((s) => ({
+      ...addLedger({ type: "cash-in", label: `Cash in mula ${WALLETS.find((x) => x.id === walletId).name}`, amount: 0 })(s),
+      wallets: { ...s.wallets, [walletId]: { ...w, balance: r2(w.balance - amt) } },
+      phpc: r2(s.phpc + amt),
+    }));
+    say(`${peso(amt)} → SukiWallet`);
+  };
+  const cashOut = (walletId, amt) => {
+    if (state.phpc < amt) return say("Kulang ang PHPC");
+    const w = state.wallets[walletId];
+    setState((s) => ({
+      ...addLedger({ type: "cash-out", label: `Cash out papuntang ${WALLETS.find((x) => x.id === walletId).name}`, amount: 0 })(s),
+      wallets: { ...s.wallets, [walletId]: { ...w, balance: r2(w.balance + amt) } },
+      phpc: r2(s.phpc - amt),
+    }));
+    say(`${peso(amt)} → ${WALLETS.find((x) => x.id === walletId).name}`);
+  };
+
+  const takeLoan = (principal) => {
+    if (principal > creditFree) return say("Lagpas sa credit limit mo");
+    const weekly = r2((principal * (1 + LOAN_FEE)) / 4);
+    setState((s) => ({
+      ...addLedger({ type: "loan-in", label: `Puhunan loan ${peso(principal)}`, amount: principal })(s),
+      phpc: r2(s.phpc + principal),
+      loans: [...s.loans, { id: "L" + Date.now(), principal, balance: r2(principal * (1 + LOAN_FEE)), weekly, paymentsLeft: 4 }],
+    }));
+    say(`${peso(principal)} na-deposit sa SukiWallet`);
+  };
+  const payLoan = (id) => {
+    const l = state.loans.find((x) => x.id === id);
+    if (!l) return;
+    if (state.phpc < l.weekly) return say("Kulang ang PHPC");
+    setState((s) => ({
+      ...addLedger({ type: "loan-pay", label: "Hulog sa loan", amount: -l.weekly })(s),
+      phpc: r2(s.phpc - l.weekly),
+      loans: s.loans
+        .map((x) => (x.id === id ? { ...x, balance: r2(x.balance - x.weekly), paymentsLeft: x.paymentsLeft - 1 } : x))
+        .filter((x) => x.paymentsLeft > 0),
+    }));
+    say("Nabayaran ang lingguhang hulog");
+  };
+
+  const buyPolicy = (pol) => {
+    if (state.policies.find((p) => p.id === pol.id)) return;
+    if (state.phpc < pol.premium) return say("Kulang ang PHPC para sa premium");
+    setState((s) => ({
+      ...addLedger({ type: "premium", label: `${pol.name} premium`, amount: -pol.premium })(s),
+      phpc: r2(s.phpc - pol.premium),
+      policies: [...s.policies, { id: pol.id, since: new Date().toISOString() }],
+    }));
+    say(`Aktibo na ang ${pol.name}`);
+  };
+
+  const startBnpl = (item) => {
+    const down = r2(item.price * 0.2);
+    const balance = item.price - down;
+    const total = r2(balance * (1 + BNPL_ADDON * BNPL_MONTHS));
+    const monthly = r2(total / BNPL_MONTHS);
+    if (total > creditFree) return say("Lagpas sa hulugan limit mo");
+    if (state.phpc < down) return say(`Kulang ang PHPC sa down na ${peso(down)}`);
+    setState((s) => ({
+      ...addLedger({ type: "bnpl-down", label: `Down payment: ${item.name}`, amount: -down })(s),
+      phpc: r2(s.phpc - down),
+      bnpl: [...s.bnpl, { id: "B" + Date.now(), itemId: item.id, monthly, monthsLeft: BNPL_MONTHS, paid: down, total: r2(down + total) }],
+    }));
+    say(`${item.name}: ipapadala kasama ng susunod mong order`);
+  };
+  const payBnpl = (id) => {
+    const b = state.bnpl.find((x) => x.id === id);
+    if (!b) return;
+    if (state.phpc < b.monthly) return say("Kulang ang PHPC");
+    setState((s) => ({
+      ...addLedger({ type: "bnpl-pay", label: `Hulog: ${BNPL_ITEMS.find((i) => i.id === b.itemId).name}`, amount: -b.monthly })(s),
+      phpc: r2(s.phpc - b.monthly),
+      bnpl: s.bnpl
+        .map((x) => (x.id === id ? { ...x, paid: r2(x.paid + x.monthly), monthsLeft: x.monthsLeft - 1 } : x))
+        .filter((x) => x.monthsLeft > 0),
+    }));
+    say("Nabayaran ang buwanang hulog");
+  };
+
+  const receiveOrder = (ref) => {
+    setState((s) => {
+      const order = s.orders.find((o) => o.ref === ref);
+      if (!order || order.status === "received") return s;
+      let inventory = [...s.inventory];
+      for (const l of order.lines) {
+        const i = inventory.findIndex((r) => r.id === l.id);
+        if (i >= 0) inventory[i] = { ...inventory[i], stock: inventory[i].stock + l.pieces };
+        else inventory.push({ id: l.id, stock: l.pieces, rate: 0.5 });
+      }
+      return {
+        ...s,
+        inventory,
+        orders: s.orders.map((o) => (o.ref === ref ? { ...o, status: "received" } : o)),
+      };
+    });
+    say("Stock added to imbentaryo");
+  };
+
+  if (!loaded)
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#0F4C3A" }}>
+        <div className="text-white font-bold animate-pulse">Binubuksan ang tindahan…</div>
+      </div>
+    );
+
+  return (
+    <div className="min-h-screen w-full flex justify-center" style={{ background: "#0F4C3A", fontFamily: "'Karla', system-ui, sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Karla:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+        .disp { font-family: 'Baloo 2', 'Arial Rounded MT Bold', system-ui, sans-serif; }
+        .awning {
+          background: repeating-linear-gradient(90deg, #D7263D 0 28px, #FCFAF4 28px 56px);
+        }
+        .awning-edge { display:flex; }
+        .awning-edge span { width: 28px; height: 14px; border-radius: 0 0 28px 28px; }
+        .tag { position: relative; background:#FFC53D; border-radius: 6px; box-shadow: 0 1px 0 rgba(0,0,0,.25); }
+        .tag::before { content:''; position:absolute; left:6px; top:50%; transform:translateY(-50%); width:5px; height:5px; background:#0F4C3A; border-radius:50%; }
+        @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+      `}</style>
+
+      <div className="w-full max-w-md min-h-screen flex flex-col relative shadow-2xl" style={{ background: "#FCFAF4" }}>
+        {!state.onboarded ? (
+          <Onboarding state={state} setState={setState} />
+        ) : (
+          <>
+            {/* header with awning */}
+            <div className="sticky top-0 z-20">
+              <div className="awning h-4" />
+              <div className="awning-edge">
+                {Array.from({ length: 16 }).map((_, i) => (
+                  <span key={i} style={{ background: i % 2 ? "#FCFAF4" : "#D7263D" }} />
+                ))}
+              </div>
+              <div className="px-4 pt-2 pb-3 flex items-end justify-between" style={{ background: "#FCFAF4", borderBottom: "1px solid #E8E2D4" }}>
+                <div>
+                  <div className="disp text-2xl font-extrabold leading-none" style={{ color: "#0F4C3A" }}>
+                    {state.store.name || "Suki Direct"}
+                  </div>
+                  <div className="text-xs" style={{ color: "#6B7265" }}>
+                    Brgy. {state.store.barangay} · direct from manufacturers
+                  </div>
+                </div>
+                <div className="tag pl-4 pr-2 py-1 text-right">
+                  <div className="text-[10px] font-bold leading-none" style={{ color: "#7A4A00" }}>NA-SAVE</div>
+                  <div className="disp font-extrabold leading-none" style={{ color: "#1B1B18" }}>{peso(state.savedTotal)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pb-32">
+              {tab === "home" && (
+                <Home
+                  state={state}
+                  inv={inv}
+                  alerts={alerts}
+                  fastMovers={fastMovers}
+                  suggestCases={suggestCases}
+                  addCases={addCases}
+                  setTab={setTab}
+                  say={say}
+                  linkedWallets={linkedWallets}
+                />
+              )}
+              {tab === "inventory" && <Inventory inv={inv} adjustStock={adjustStock} logSale={logSale} suggestCases={suggestCases} addCases={addCases} say={say} />}
+              {tab === "order" && <Catalog cart={cart} addCases={addCases} inv={inv} />}
+              {tab === "orders" && <Orders orders={state.orders} receiveOrder={receiveOrder} />}
+              {tab === "pera" && (
+                <Pera
+                  state={state}
+                  sukiScore={sukiScore}
+                  creditLimit={creditLimit}
+                  creditFree={creditFree}
+                  cashIn={cashIn}
+                  cashOut={cashOut}
+                  takeLoan={takeLoan}
+                  payLoan={payLoan}
+                  buyPolicy={buyPolicy}
+                  startBnpl={startBnpl}
+                  payBnpl={payBnpl}
+                  inv={inv}
+                  alerts={alerts}
+                />
+              )}
+            </div>
+
+            {/* cart bar */}
+            {cartCases > 0 && !cartOpen && (
+              <button
+                onClick={() => setCartOpen(true)}
+                className="absolute left-3 right-3 bottom-20 z-30 rounded-2xl px-4 py-3 flex items-center justify-between shadow-xl"
+                style={{ background: "#D7263D", color: "#FCFAF4" }}
+              >
+                <span className="font-bold">{cartCases} case{cartCases > 1 ? "s" : ""} sa cart</span>
+                <span className="disp font-extrabold text-lg">{peso(cartCost)} →</span>
+              </button>
+            )}
+
+            {/* bottom tabs */}
+            <nav className="absolute bottom-0 left-0 right-0 z-20 grid grid-cols-5 border-t" style={{ background: "#FCFAF4", borderColor: "#E8E2D4" }}>
+              {[
+                ["home", "🏠", "Tindahan"],
+                ["inventory", "📦", "Imbentaryo"],
+                ["order", "🛒", "Umorder"],
+                ["pera", "💸", "Pera"],
+                ["orders", "🧾", "Orders"],
+              ].map(([id, icon, label]) => (
+                <button key={id} onClick={() => setTab(id)} className="py-2.5 flex flex-col items-center gap-0.5">
+                  <span className="text-lg leading-none">{icon}</span>
+                  <span className="text-[11px] font-bold" style={{ color: tab === id ? "#D7263D" : "#8A9184" }}>
+                    {label}
+                  </span>
+                </button>
+              ))}
+            </nav>
+
+            {cartOpen && (
+              <Cart
+                lines={cartLines}
+                cost={cartCost}
+                save={cartSave}
+                addCases={addCases}
+                close={() => setCartOpen(false)}
+                startCheckout={startCheckout}
+              />
+            )}
+            {payFor && (
+              <PaySheet
+                order={payFor}
+                setOrder={setPayFor}
+                wallets={WALLETS.filter((w) => state.wallets[w.id]?.linked).map((w) => ({ ...w, balance: state.wallets[w.id].balance }))}
+                confirmPay={confirmPay}
+                cancel={() => setPayFor(null)}
+              />
+            )}
+          </>
+        )}
+
+        {toast && (
+          <div className="absolute top-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-sm font-bold shadow-lg" style={{ background: "#1B1B18", color: "#FFC53D" }}>
+            {toast}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- onboarding ----------------
+function Onboarding({ state, setState }) {
+  const [step, setStep] = useState(0);
+  const [form, setForm] = useState({ name: "", owner: "", barangay: "" });
+  const [links, setLinks] = useState({});
+
+  const toggle = (id) => setLinks((l) => ({ ...l, [id]: !l[id] }));
+  const linkedCount = Object.values(links).filter(Boolean).length;
+
+  const finish = () => {
+    const wallets = {};
+    for (const w of WALLETS) if (links[w.id]) wallets[w.id] = { linked: true, balance: w.balance };
+    setState((s) => ({ ...s, onboarded: true, store: form, wallets }));
+  };
+
+  const input = (key, label, ph) => (
+    <label className="block">
+      <span className="text-xs font-bold uppercase tracking-wide" style={{ color: "#0F4C3A" }}>{label}</span>
+      <input
+        value={form[key]}
+        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+        placeholder={ph}
+        className="mt-1 w-full rounded-xl px-3 py-3 text-base outline-none border-2 focus:border-red-600"
+        style={{ borderColor: "#E8E2D4", background: "white", color: "#1B1B18" }}
+      />
+    </label>
+  );
+
+  return (
+    <div className="flex-1 flex flex-col">
+      <div className="awning h-5" />
+      <div className="awning-edge">
+        {Array.from({ length: 16 }).map((_, i) => (
+          <span key={i} style={{ background: i % 2 ? "#FCFAF4" : "#D7263D" }} />
+        ))}
+      </div>
+      <div className="px-6 pt-8 pb-4">
+        <div className="disp text-4xl font-extrabold leading-tight" style={{ color: "#0F4C3A" }}>
+          Suki<span style={{ color: "#D7263D" }}>Direct</span>
+        </div>
+        <p className="mt-1 text-sm" style={{ color: "#6B7265" }}>
+          Bili nang direkta sa manufacturer. Mas mura ang puhunan, mas mabilis ang ikot ng paninda.
+        </p>
+      </div>
+
+      {step === 0 && (
+        <div className="px-6 space-y-4 flex-1">
+          {input("name", "Pangalan ng tindahan", "Aling Nena's Store")}
+          {input("owner", "May-ari", "Nena Reyes")}
+          {input("barangay", "Barangay", "San Isidro")}
+          <button
+            disabled={!form.name || !form.barangay}
+            onClick={() => setStep(1)}
+            className="w-full rounded-2xl py-4 disp text-lg font-extrabold disabled:opacity-40"
+            style={{ background: "#D7263D", color: "#FCFAF4" }}
+          >
+            Sunod: i-link ang wallet
+          </button>
+        </div>
+      )}
+
+      {step === 1 && (
+        <div className="px-6 space-y-3 flex-1">
+          <p className="text-sm font-bold" style={{ color: "#1B1B18" }}>
+            Piliin ang e-wallet na gagamitin sa pagbayad ng orders:
+          </p>
+          {WALLETS.map((w) => (
+            <button
+              key={w.id}
+              onClick={() => toggle(w.id)}
+              className="w-full rounded-2xl p-4 flex items-center gap-3 border-2 text-left"
+              style={{ borderColor: links[w.id] ? "#0E7C66" : "#E8E2D4", background: "white" }}
+            >
+              <span className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-extrabold disp" style={{ background: w.color }}>
+                {w.letter}
+              </span>
+              <span className="flex-1">
+                <span className="block font-bold" style={{ color: "#1B1B18" }}>{w.name}</span>
+                <span className="block text-xs" style={{ color: "#6B7265" }}>
+                  {links[w.id] ? `Linked · balance ${peso(w.balance)}` : "Tap to link"}
+                </span>
+              </span>
+              <span className="text-xl">{links[w.id] ? "✅" : "＋"}</span>
+            </button>
+          ))}
+          <button
+            disabled={linkedCount === 0}
+            onClick={finish}
+            className="w-full rounded-2xl py-4 disp text-lg font-extrabold disabled:opacity-40"
+            style={{ background: "#0F4C3A", color: "#FFC53D" }}
+          >
+            Buksan ang tindahan 🎉
+          </button>
+        </div>
+      )}
+      <p className="px-6 pb-6 text-center text-xs" style={{ color: "#8A9184" }}>
+        Demo app · balances are simulated
+      </p>
+    </div>
+  );
+}
+
+// ---------------- home ----------------
+function Home({ state, inv, alerts, fastMovers, suggestCases, addCases, setTab, say, linkedWallets }) {
+  const restockAll = () => {
+    let n = 0;
+    for (const r of alerts) {
+      addCases(r.id, suggestCases(r));
+      n++;
+    }
+    if (n) {
+      say(`${n} SKU idinagdag sa cart`);
+      setTab("order");
+    }
+  };
+
+  return (
+    <div className="px-4 pt-4 space-y-5">
+      {/* wallets */}
+      <div className="flex gap-2">
+        {WALLETS.filter((w) => state.wallets[w.id]?.linked).map((w) => (
+          <div key={w.id} className="flex-1 rounded-xl p-2.5 text-white" style={{ background: w.color }}>
+            <div className="text-[10px] font-bold opacity-80">{w.name}</div>
+            <div className="disp font-extrabold text-sm leading-tight">{peso(state.wallets[w.id].balance)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* alerts */}
+      <section>
+        <div className="flex items-center justify-between">
+          <h2 className="disp text-lg font-extrabold" style={{ color: "#1B1B18" }}>Malapit nang maubos</h2>
+          {alerts.length > 0 && (
+            <button onClick={restockAll} className="text-xs font-extrabold px-3 py-1.5 rounded-full" style={{ background: "#D7263D", color: "white" }}>
+              I-restock lahat →
+            </button>
+          )}
+        </div>
+        {alerts.length === 0 ? (
+          <p className="mt-2 text-sm rounded-xl p-3" style={{ background: "#E9F2EC", color: "#0F4C3A" }}>
+            Sakto ang stock ng lahat ng mabibilis mabenta. ✨
+          </p>
+        ) : (
+          <div className="mt-2 space-y-2">
+            {alerts.map((r) => (
+              <div key={r.id} className="rounded-xl p-3 flex items-center gap-3 border" style={{ background: "white", borderColor: "#F3C1C7" }}>
+                <span className="text-2xl">{r.p.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm truncate" style={{ color: "#1B1B18" }}>{r.p.name}</div>
+                  <div className="text-xs" style={{ color: "#B3222F" }}>
+                    {r.stock} pcs na lang · {r.cover < 1 ? "ubos ngayon" : `~${Math.floor(r.cover)} araw`} · {r.rate}/day benta
+                  </div>
+                </div>
+                <button
+                  onClick={() => { addCases(r.id, suggestCases(r)); say(`${suggestCases(r)} case sa cart`); }}
+                  className="text-xs font-extrabold px-3 py-2 rounded-xl"
+                  style={{ background: "#FFC53D", color: "#1B1B18" }}
+                >
+                  +{suggestCases(r)} case
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* fast movers */}
+      <section>
+        <h2 className="disp text-lg font-extrabold" style={{ color: "#1B1B18" }}>Mabilis mabenta</h2>
+        <p className="text-xs -mt-0.5 mb-2" style={{ color: "#6B7265" }}>
+          Ito ang pinaikutin ng pera mo. Panatilihing maliit ang stock, madalas ang order.
+        </p>
+        <div className="rounded-2xl overflow-hidden border" style={{ borderColor: "#E8E2D4", background: "white" }}>
+          {fastMovers.slice(0, 5).map((r, i) => (
+            <div key={r.id} className="px-3 py-2.5 flex items-center gap-3" style={{ borderTop: i ? "1px solid #F0EBDD" : "none" }}>
+              <span className="text-xl">{r.p.emoji}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold truncate" style={{ color: "#1B1B18" }}>{r.p.name}</div>
+                <div className="text-[11px]" style={{ color: "#6B7265" }}>
+                  {r.rate} pcs/day · tubo {peso(r.p.srp - r.p.direct)}/pc sa direct price
+                </div>
+              </div>
+              <CoverBadge cover={r.cover} />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* value prop */}
+      <section className="rounded-2xl p-4" style={{ background: "#0F4C3A", color: "#FCFAF4" }}>
+        <div className="disp font-extrabold text-lg" style={{ color: "#FFC53D" }}>Bakit direct?</div>
+        <p className="text-sm mt-1 opacity-90">
+          Ang presyo namin ay mula mismo sa pabrika, hindi sa bodega. Mas mababa nang 8 to 12% kaysa wholesaler, libre ang pickup sa hub, at {peso(49)} lang ang delivery (libre pag {peso(3000)}+).
+        </p>
+        <button onClick={() => setTab("order")} className="mt-3 w-full rounded-xl py-3 disp font-extrabold" style={{ background: "#FFC53D", color: "#1B1B18" }}>
+          Tingnan ang presyo →
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function CoverBadge({ cover }) {
+  const [bg, fg, label] =
+    cover < 3 ? ["#FBE3E6", "#B3222F", `${Math.floor(cover)}d`] :
+    cover < 7 ? ["#FFF3D6", "#8A6100", `${Math.floor(cover)}d`] :
+    ["#E9F2EC", "#0F4C3A", cover > 30 ? "30d+" : `${Math.floor(cover)}d`];
+  return (
+    <span className="text-[11px] font-extrabold px-2 py-1 rounded-lg" style={{ background: bg, color: fg }}>
+      {label}
+    </span>
+  );
+}
+
+// ---------------- inventory ----------------
+function Inventory({ inv, adjustStock, logSale, suggestCases, addCases, say }) {
+  const sorted = [...inv].sort((a, b) => a.cover - b.cover);
+  return (
+    <div className="px-4 pt-4">
+      <h2 className="disp text-lg font-extrabold" style={{ color: "#1B1B18" }}>Imbentaryo</h2>
+      <p className="text-xs mb-3" style={{ color: "#6B7265" }}>
+        Tap “benta” tuwing may bumili para tumpak ang bilang at ang reorder suggestion. “d” = ilang araw bago maubos.
+      </p>
+      <div className="space-y-2">
+        {sorted.map((r) => (
+          <div key={r.id} className="rounded-xl p-3 border" style={{ background: "white", borderColor: "#E8E2D4" }}>
+            <div className="flex items-center gap-2">
+              <span className="text-xl">{r.p.emoji}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold truncate" style={{ color: "#1B1B18" }}>{r.p.name}</div>
+                <div className="text-[11px]" style={{ color: "#6B7265" }}>{r.rate} pcs/day · SRP {peso(r.p.srp)}</div>
+              </div>
+              <CoverBadge cover={r.cover} />
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <button onClick={() => adjustStock(r.id, -1)} className="w-9 h-9 rounded-lg font-extrabold border" style={{ borderColor: "#E8E2D4", color: "#1B1B18" }}>−</button>
+              <span className="disp font-extrabold w-14 text-center" style={{ color: "#1B1B18" }}>{r.stock}</span>
+              <button onClick={() => adjustStock(r.id, 1)} className="w-9 h-9 rounded-lg font-extrabold border" style={{ borderColor: "#E8E2D4", color: "#1B1B18" }}>＋</button>
+              <button onClick={() => logSale(r.id)} className="ml-1 flex-1 rounded-lg py-2 text-xs font-extrabold" style={{ background: "#E9F2EC", color: "#0F4C3A" }}>
+                benta −1
+              </button>
+              <button
+                onClick={() => { addCases(r.id, suggestCases(r)); say("Nadagdag sa cart"); }}
+                className="rounded-lg py-2 px-3 text-xs font-extrabold"
+                style={{ background: "#FFC53D", color: "#1B1B18" }}
+              >
+                order
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- catalog ----------------
+function Catalog({ cart, addCases, inv }) {
+  const [cat, setCat] = useState("Lahat");
+  const stockOf = Object.fromEntries(inv.map((r) => [r.id, r]));
+  const items = CATALOG.filter((p) => cat === "Lahat" || p.cat === cat);
+
+  return (
+    <div className="pt-3">
+      <div className="px-4 flex gap-2 overflow-x-auto pb-2">
+        {CATS.map((c) => (
+          <button
+            key={c}
+            onClick={() => setCat(c)}
+            className="px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap border"
+            style={cat === c ? { background: "#0F4C3A", color: "#FFC53D", borderColor: "#0F4C3A" } : { background: "white", color: "#1B1B18", borderColor: "#E8E2D4" }}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+      <div className="px-4 space-y-2 mt-1">
+        {items.map((p) => {
+          const inCart = cart[p.id] || 0;
+          const saving = ((p.wholesale - p.direct) / p.wholesale) * 100;
+          const row = stockOf[p.id];
+          return (
+            <div key={p.id} className="rounded-xl p-3 border" style={{ background: "white", borderColor: "#E8E2D4" }}>
+              <div className="flex gap-3">
+                <span className="text-3xl">{p.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold leading-tight" style={{ color: "#1B1B18" }}>{p.name}</div>
+                  <div className="text-[11px]" style={{ color: "#6B7265" }}>{p.brand} · {p.unit}{row ? ` · ${row.stock} sa shelf` : ""}</div>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="tag pl-4 pr-2 py-0.5 disp font-extrabold text-sm" style={{ color: "#1B1B18" }}>
+                      {peso(p.direct)}<span className="text-[10px] font-bold">/pc</span>
+                    </span>
+                    <span className="text-[11px] line-through" style={{ color: "#8A9184" }}>{peso(p.wholesale)}</span>
+                    <span className="text-[11px] font-extrabold" style={{ color: "#0E7C66" }}>−{saving.toFixed(0)}%</span>
+                  </div>
+                  <div className="text-[11px] mt-0.5" style={{ color: "#6B7265" }}>
+                    Tubo mo sa SRP {peso(p.srp)}: <b style={{ color: "#0F4C3A" }}>{peso(p.srp - p.direct)}/pc</b>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end justify-between">
+                  {inCart === 0 ? (
+                    <button onClick={() => addCases(p.id, 1)} className="rounded-xl px-3 py-2 text-xs font-extrabold" style={{ background: "#D7263D", color: "white" }}>
+                      + case
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => addCases(p.id, -1)} className="w-8 h-8 rounded-lg font-extrabold border" style={{ borderColor: "#E8E2D4", color: "#1B1B18" }}>−</button>
+                      <span className="disp font-extrabold w-6 text-center" style={{ color: "#D7263D" }}>{inCart}</span>
+                      <button onClick={() => addCases(p.id, 1)} className="w-8 h-8 rounded-lg font-extrabold" style={{ background: "#D7263D", color: "white" }}>＋</button>
+                    </div>
+                  )}
+                  <span className="text-[10px] mt-1" style={{ color: "#8A9184" }}>{peso(p.direct * p.pack)}/case</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- cart ----------------
+function Cart({ lines, cost, save, addCases, close, startCheckout }) {
+  const [mode, setMode] = useState("pickup");
+  const fee = mode === "delivery" ? (cost >= 3000 ? 0 : 49) : 0;
+  return (
+    <div className="absolute inset-0 z-40 flex flex-col justify-end" style={{ background: "rgba(27,27,24,.5)" }} onClick={close}>
+      <div className="rounded-t-3xl p-4 max-h-[85%] overflow-y-auto" style={{ background: "#FCFAF4" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="disp text-xl font-extrabold" style={{ color: "#1B1B18" }}>Cart</h3>
+          <button onClick={close} className="text-sm font-bold" style={{ color: "#8A9184" }}>Isara ✕</button>
+        </div>
+
+        <div className="mt-3 space-y-2">
+          {lines.map((l) => (
+            <div key={l.p.id} className="flex items-center gap-2 rounded-xl p-2.5 border" style={{ background: "white", borderColor: "#E8E2D4" }}>
+              <span className="text-xl">{l.p.emoji}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold truncate" style={{ color: "#1B1B18" }}>{l.p.name}</div>
+                <div className="text-[11px]" style={{ color: "#6B7265" }}>{l.cases} case · {l.pieces} pcs</div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => addCases(l.p.id, -1)} className="w-7 h-7 rounded-lg border font-extrabold" style={{ borderColor: "#E8E2D4", color: "#1B1B18" }}>−</button>
+                <button onClick={() => addCases(l.p.id, 1)} className="w-7 h-7 rounded-lg font-extrabold" style={{ background: "#0F4C3A", color: "#FFC53D" }}>＋</button>
+              </div>
+              <span className="disp font-extrabold text-sm w-20 text-right" style={{ color: "#1B1B18" }}>{peso(l.cost)}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* fulfillment */}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {[
+            ["pickup", "🏪 Pickup sa hub", "Libre · ready in 3 hrs"],
+            ["delivery", "🛵 Ipa-deliver", cost >= 3000 ? "Libre (₱3,000+)" : `${peso(49)} · bukas ng umaga`],
+          ].map(([id, title, sub]) => (
+            <button
+              key={id}
+              onClick={() => setMode(id)}
+              className="rounded-xl p-3 text-left border-2"
+              style={{ borderColor: mode === id ? "#D7263D" : "#E8E2D4", background: "white" }}
+            >
+              <div className="text-sm font-extrabold" style={{ color: "#1B1B18" }}>{title}</div>
+              <div className="text-[11px]" style={{ color: "#6B7265" }}>{sub}</div>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4 rounded-xl p-3 text-sm space-y-1" style={{ background: "#E9F2EC", color: "#0F4C3A" }}>
+          <div className="flex justify-between"><span>Subtotal</span><b>{peso(cost)}</b></div>
+          <div className="flex justify-between"><span>{mode === "pickup" ? "Pickup" : "Delivery"}</span><b>{fee ? peso(fee) : "Libre"}</b></div>
+          <div className="flex justify-between"><span>Na-save vs wholesaler</span><b style={{ color: "#0E7C66" }}>{peso(save)}</b></div>
+          <div className="flex justify-between text-base pt-1 border-t" style={{ borderColor: "#CBDCCF" }}>
+            <span className="font-bold">Total</span><span className="disp font-extrabold">{peso(cost + fee)}</span>
+          </div>
+        </div>
+
+        <button onClick={() => startCheckout(mode)} className="mt-3 w-full rounded-2xl py-4 disp text-lg font-extrabold" style={{ background: "#D7263D", color: "white" }}>
+          Bayaran {peso(cost + fee)}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- payment ----------------
+function PaySheet({ order, setOrder, wallets, confirmPay, cancel }) {
+  return (
+    <div className="absolute inset-0 z-50 flex flex-col justify-end" style={{ background: "rgba(27,27,24,.6)" }} onClick={cancel}>
+      <div className="rounded-t-3xl p-4" style={{ background: "#FCFAF4" }} onClick={(e) => e.stopPropagation()}>
+        <h3 className="disp text-xl font-extrabold" style={{ color: "#1B1B18" }}>Piliin ang wallet</h3>
+        <p className="text-xs" style={{ color: "#6B7265" }}>
+          {order.fulfillment === "pickup" ? "Pickup sa hub" : "Delivery"} · total <b>{peso(order.total)}</b>
+        </p>
+        <div className="mt-3 space-y-2">
+          {wallets.length === 0 && (
+            <p className="text-sm rounded-xl p-3" style={{ background: "#FBE3E6", color: "#B3222F" }}>
+              Walang naka-link na wallet. I-restart ang onboarding para mag-link.
+            </p>
+          )}
+          {wallets.map((w) => {
+            const enough = w.balance >= order.total;
+            return (
+              <button
+                key={w.id}
+                disabled={!enough}
+                onClick={() => setOrder((o) => ({ ...o, wallet: w.id }))}
+                className="w-full rounded-2xl p-3 flex items-center gap-3 border-2 text-left disabled:opacity-45"
+                style={{ borderColor: order.wallet === w.id ? "#0E7C66" : "#E8E2D4", background: "white" }}
+              >
+                <span className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-extrabold disp" style={{ background: w.color }}>{w.letter}</span>
+                <span className="flex-1">
+                  <span className="block font-bold" style={{ color: "#1B1B18" }}>{w.name}</span>
+                  <span className="block text-xs" style={{ color: enough ? "#6B7265" : "#B3222F" }}>
+                    Balance {peso(w.balance)}{enough ? "" : " · kulang"}
+                  </span>
+                </span>
+                {order.wallet === w.id && <span>✅</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-3 flex gap-2">
+          <button onClick={cancel} className="flex-1 rounded-2xl py-3.5 font-extrabold border" style={{ borderColor: "#E8E2D4", color: "#1B1B18" }}>
+            Bumalik
+          </button>
+          <button
+            disabled={!order.wallet}
+            onClick={confirmPay}
+            className="flex-[2] rounded-2xl py-3.5 disp text-lg font-extrabold disabled:opacity-40"
+            style={{ background: "#0F4C3A", color: "#FFC53D" }}
+          >
+            Kumpirmahin ang bayad
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- orders ----------------
+function Orders({ orders, receiveOrder }) {
+  return (
+    <div className="px-4 pt-4">
+      <h2 className="disp text-lg font-extrabold" style={{ color: "#1B1B18" }}>Mga order</h2>
+      {orders.length === 0 ? (
+        <p className="mt-2 text-sm rounded-xl p-4" style={{ background: "white", border: "1px solid #E8E2D4", color: "#6B7265" }}>
+          Wala pang order. Pumunta sa <b>Umorder</b> para makita ang direct prices.
+        </p>
+      ) : (
+        <div className="mt-2 space-y-3">
+          {orders.map((o) => (
+            <div key={o.ref} className="rounded-xl p-3 border" style={{ background: "white", borderColor: "#E8E2D4" }}>
+              <div className="flex items-center justify-between">
+                <span className="disp font-extrabold" style={{ color: "#1B1B18" }}>{o.ref}</span>
+                <span
+                  className="text-[11px] font-extrabold px-2 py-1 rounded-lg"
+                  style={o.status === "received" ? { background: "#E9F2EC", color: "#0F4C3A" } : { background: "#FFF3D6", color: "#8A6100" }}
+                >
+                  {o.status === "received" ? "Natanggap ✓" : o.fulfillment === "pickup" ? "Ready for pickup" : "Padating 🛵"}
+                </span>
+              </div>
+              <div className="text-[11px] mt-0.5" style={{ color: "#6B7265" }}>
+                {new Date(o.when).toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ·
+                paid via {WALLETS.find((w) => w.id === o.wallet)?.name}
+              </div>
+              <div className="mt-2 text-sm space-y-0.5" style={{ color: "#1B1B18" }}>
+                {o.lines.map((l) => (
+                  <div key={l.id} className="flex justify-between">
+                    <span>{byId[l.id].emoji} {byId[l.id].name} × {l.cases}</span>
+                    <span className="font-bold">{peso(l.cost)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between pt-1 border-t text-[13px]" style={{ borderColor: "#F0EBDD", color: "#6B7265" }}>
+                  <span>Total (save {peso(o.save)})</span>
+                  <b style={{ color: "#1B1B18" }}>{peso(o.total)}</b>
+                </div>
+              </div>
+              {o.status !== "received" && (
+                <button onClick={() => receiveOrder(o.ref)} className="mt-2.5 w-full rounded-xl py-2.5 text-sm font-extrabold" style={{ background: "#0F4C3A", color: "#FFC53D" }}>
+                  Natanggap ko na · idagdag sa imbentaryo
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- pera: AI bookkeeper, SukiWallet, credit, insurance ----------------
+function Pera({ state, sukiScore, creditLimit, creditFree, cashIn, cashOut, takeLoan, payLoan, buyPolicy, startBnpl, payBnpl, inv, alerts }) {
+  const [sub, setSub] = useState("libro");
+  const subs = [
+    ["libro", "🤖 Ka-Suki AI"],
+    ["wallet", "🪙 SukiWallet"],
+    ["credit", "🛍️ Hulugan"],
+    ["insurance", "🛡️ Insurance"],
+  ];
+
+  // bookkeeping rollups from ledger
+  const now = new Date();
+  const dayKey = (d) => new Date(d).toDateString();
+  const sales = state.ledger.filter((e) => e.type === "sale");
+  const today = sales.filter((e) => dayKey(e.when) === now.toDateString());
+  const week = sales.filter((e) => now - new Date(e.when) < 7 * 864e5);
+  const sum = (a, k) => r2(a.reduce((s, e) => s + (e[k] || 0), 0));
+  const stats = {
+    todayCount: today.length, todayRev: sum(today, "amount"), todayTubo: sum(today, "tubo"),
+    weekCount: week.length, weekRev: sum(week, "amount"), weekTubo: sum(week, "tubo"),
+  };
+
+  return (
+    <div className="px-4 pt-3">
+      {/* score card */}
+      <div className="rounded-2xl p-4" style={{ background: "#0F4C3A", color: "#FCFAF4" }}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-bold" style={{ color: "#9DBFAF" }}>SUKI SCORE</div>
+            <div className="disp text-4xl font-extrabold leading-none" style={{ color: "#FFC53D" }}>{sukiScore}</div>
+          </div>
+          <div className="text-right text-xs">
+            <div style={{ color: "#9DBFAF" }}>Credit na magagamit</div>
+            <div className="disp text-xl font-extrabold">{peso(creditFree)}</div>
+            <div style={{ color: "#9DBFAF" }}>sa {peso(creditLimit)} limit</div>
+          </div>
+        </div>
+        <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: "#1E6A50" }}>
+          <div className="h-full rounded-full" style={{ width: `${((sukiScore - 500) / 350) * 100}%`, background: "#FFC53D" }} />
+        </div>
+        <p className="mt-2 text-[11px]" style={{ color: "#9DBFAF" }}>
+          Tumataas ang score sa bawat order, benta na naka-log, at hulog na nabayaran sa oras. Walang bangko? Ang tindahan mo ang credit history mo.
+        </p>
+      </div>
+
+      {/* sub nav */}
+      <div className="flex gap-2 overflow-x-auto py-3">
+        {subs.map(([id, label]) => (
+          <button key={id} onClick={() => setSub(id)} className="px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap border"
+            style={sub === id ? { background: "#D7263D", color: "white", borderColor: "#D7263D" } : { background: "white", color: "#1B1B18", borderColor: "#E8E2D4" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {sub === "libro" && <Libro state={state} stats={stats} inv={inv} alerts={alerts} sukiScore={sukiScore} creditFree={creditFree} />}
+      {sub === "wallet" && <SukiWallet state={state} cashIn={cashIn} cashOut={cashOut} />}
+      {sub === "credit" && <Credit state={state} creditFree={creditFree} takeLoan={takeLoan} payLoan={payLoan} startBnpl={startBnpl} payBnpl={payBnpl} />}
+      {sub === "insurance" && <Insurance state={state} buyPolicy={buyPolicy} />}
+    </div>
+  );
+}
+
+// ---------------- Ka-Suki: AI bookkeeping agent ----------------
+function Libro({ state, stats, inv, alerts, sukiScore, creditFree }) {
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const endRef = useRef(null);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+
+  const context = () => JSON.stringify({
+    tindahan: state.store,
+    ngayon: new Date().toLocaleString("en-PH"),
+    kita: stats,
+    na_save_sa_direct_buying: state.savedTotal,
+    suki_score: sukiScore,
+    credit_available: creditFree,
+    phpc_wallet: state.phpc,
+    e_wallets: Object.fromEntries(Object.entries(state.wallets).map(([k, v]) => [k, v.balance])),
+    imbentaryo: inv.map((r) => ({ sku: r.p.name, stock: r.stock, benta_per_day: r.rate, araw_bago_maubos: Math.round(r.cover * 10) / 10, puhunan_per_pc: r.p.direct, srp: r.p.srp })),
+    malapit_maubos: alerts.map((r) => r.p.name),
+    mga_utang: { loans: state.loans, hulugan: state.bnpl },
+    insurance: state.policies.map((p) => p.id),
+    ledger_recent: state.ledger.slice(0, 40),
+  });
+
+  const ask = async (q) => {
+    const question = (q ?? input).trim();
+    if (!question || busy) return;
+    setInput("");
+    setMsgs((m) => [...m, { role: "user", content: question }]);
+    setBusy(true);
+    try {
+      let apiKey = localStorage.getItem("sukidirect:apikey");
+      if (!apiKey) {
+        apiKey = window.prompt("Ilagay ang iyong Anthropic API key (console.anthropic.com). Naka-save lang ito sa phone/browser mo:");
+        if (apiKey) localStorage.setItem("sukidirect:apikey", apiKey.trim());
+      }
+      if (!apiKey) throw new Error("no key");
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey.trim(),
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1000,
+          system:
+            "Ikaw si Ka-Suki, ang AI bookkeeper at business adviser ng isang sari sari store sa Pilipinas. Sumagot sa Taglish, maikli at diretso, laging may numero. Gamitin LAMANG ang data sa ibinigay na JSON. Tulungan ang may-ari sa: kita at tubo, ano ang i-restock, cash flow, kung kaya ba ang isang loan o hulugan, at payo sa negosyo. Huwag mag-imbento ng datos. Plain text lang, walang markdown.",
+          messages: [
+            ...msgs.map(({ role, content }) => ({ role, content })),
+            { role: "user", content: `DATA NG TINDAHAN:\n${context()}\n\nTANONG: ${question}` },
+          ],
+        }),
+      });
+      const data = await res.json();
+      if (res.status === 401 || res.status === 403) { localStorage.removeItem("sukidirect:apikey"); throw new Error("bad key"); }
+      const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n") || "Pasensya, walang sagot na bumalik.";
+      setMsgs((m) => [...m, { role: "assistant", content: text }]);
+    } catch (e) {
+      setMsgs((m) => [...m, { role: "assistant", content: "Hindi maabot si Ka-Suki ngayon. Subukan ulit mamaya." }]);
+    }
+    setBusy(false);
+  };
+
+  const chips = [
+    "Magkano kita at tubo ko ngayong linggo?",
+    "Ano ang dapat kong i-restock at bakit?",
+    "Kaya ko bang hulugan ang freezer na ₱13,995?",
+    "Paano ko mapapataas ang Suki Score ko?",
+  ];
+
+  return (
+    <div className="space-y-3 pb-4">
+      {/* auto bookkeeping summary */}
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          ["Benta ngayon", peso(stats.todayRev), `${stats.todayCount} items`],
+          ["Tubo ngayon", peso(stats.todayTubo), "kita − puhunan"],
+          ["Benta 7 araw", peso(stats.weekRev), `${stats.weekCount} items`],
+          ["Tubo 7 araw", peso(stats.weekTubo), "gross profit"],
+        ].map(([l, v, s]) => (
+          <div key={l} className="rounded-xl p-3 border" style={{ background: "white", borderColor: "#E8E2D4" }}>
+            <div className="text-[10px] font-bold uppercase" style={{ color: "#8A9184" }}>{l}</div>
+            <div className="disp text-lg font-extrabold" style={{ color: "#0F4C3A" }}>{v}</div>
+            <div className="text-[10px]" style={{ color: "#8A9184" }}>{s}</div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] px-1" style={{ color: "#6B7265" }}>
+        Awtomatiko ang libro: bawat “benta −1” sa Imbentaryo at bawat order ay naitatala. Si Ka-Suki ang magbabasa nito para sa iyo.
+      </p>
+
+      {/* chat */}
+      <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "#E8E2D4", background: "white" }}>
+        <div className="px-3 py-2 flex items-center gap-2" style={{ background: "#FFF3D6" }}>
+          <span className="text-lg">🤖</span>
+          <div>
+            <div className="text-sm font-extrabold" style={{ color: "#1B1B18" }}>Ka-Suki</div>
+            <div className="text-[10px]" style={{ color: "#8A6100" }}>AI bookkeeper mo · nakikita ang buong libro at imbentaryo</div>
+          </div>
+        </div>
+        <div className="p-3 space-y-2 max-h-72 overflow-y-auto">
+          {msgs.length === 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {chips.map((c) => (
+                <button key={c} onClick={() => ask(c)} className="text-[11px] font-bold px-2.5 py-1.5 rounded-full border text-left" style={{ borderColor: "#E8E2D4", color: "#0F4C3A", background: "#FCFAF4" }}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          )}
+          {msgs.map((m, i) => (
+            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className="max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap"
+                style={m.role === "user" ? { background: "#0F4C3A", color: "#FCFAF4" } : { background: "#F2EEE3", color: "#1B1B18" }}>
+                {m.content}
+              </div>
+            </div>
+          ))}
+          {busy && <div className="text-xs animate-pulse" style={{ color: "#8A9184" }}>Nagbabasa ng libro si Ka-Suki…</div>}
+          <div ref={endRef} />
+        </div>
+        <div className="p-2 flex gap-2 border-t" style={{ borderColor: "#F0EBDD" }}>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && ask()}
+            placeholder="Tanungin si Ka-Suki…"
+            className="flex-1 rounded-xl px-3 py-2.5 text-sm outline-none border"
+            style={{ borderColor: "#E8E2D4", color: "#1B1B18", background: "#FCFAF4" }}
+          />
+          <button onClick={() => ask()} disabled={busy || !input.trim()} className="rounded-xl px-4 font-extrabold disabled:opacity-40" style={{ background: "#D7263D", color: "white" }}>
+            ➤
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- SukiWallet: PHPC stablecoin rail ----------------
+function SukiWallet({ state, cashIn, cashOut }) {
+  const [amt, setAmt] = useState(500);
+  const [src, setSrc] = useState(Object.keys(state.wallets)[0]);
+  const linked = WALLETS.filter((w) => state.wallets[w.id]?.linked);
+
+  return (
+    <div className="space-y-3 pb-4">
+      <div className="rounded-2xl p-4 text-white" style={{ background: "linear-gradient(135deg, #0E7C66, #0F4C3A)" }}>
+        <div className="flex items-center justify-between">
+          <div className="text-[11px] font-bold" style={{ color: "#9DE0CF" }}>SUKIWALLET · PHPC STABLECOIN</div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: "rgba(255,255,255,.15)" }}>on-chain</span>
+        </div>
+        <div className="disp text-4xl font-extrabold mt-1">{peso(state.phpc)}</div>
+        <p className="text-[11px] mt-1" style={{ color: "#9DE0CF" }}>
+          1 PHPC = ₱1. Dito dumadaan ang loans, insurance, at hulugan. Kahit walang bank account, may pinansyal na rekord ka na.
+        </p>
+      </div>
+
+      <div className="rounded-2xl p-3 border space-y-2" style={{ background: "white", borderColor: "#E8E2D4" }}>
+        <div className="text-sm font-extrabold" style={{ color: "#1B1B18" }}>Maglipat ng pera</div>
+        <div className="flex gap-1.5">
+          {linked.map((w) => (
+            <button key={w.id} onClick={() => setSrc(w.id)} className="flex-1 rounded-xl py-2 text-xs font-extrabold border-2"
+              style={{ borderColor: src === w.id ? w.color : "#E8E2D4", color: "#1B1B18", background: "white" }}>
+              {w.name}
+              <span className="block text-[10px] font-bold" style={{ color: "#8A9184" }}>{peso(state.wallets[w.id].balance)}</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1.5">
+          {[200, 500, 1000, 2000].map((v) => (
+            <button key={v} onClick={() => setAmt(v)} className="flex-1 rounded-lg py-1.5 text-xs font-extrabold border"
+              style={amt === v ? { background: "#FFC53D", borderColor: "#FFC53D", color: "#1B1B18" } : { borderColor: "#E8E2D4", color: "#1B1B18" }}>
+              {peso(v)}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => src && cashIn(src, amt)} className="flex-1 rounded-xl py-3 text-sm font-extrabold" style={{ background: "#0E7C66", color: "white" }}>
+            Cash in → PHPC
+          </button>
+          <button onClick={() => src && cashOut(src, amt)} className="flex-1 rounded-xl py-3 text-sm font-extrabold border" style={{ borderColor: "#0E7C66", color: "#0E7C66" }}>
+            PHPC → e-wallet
+          </button>
+        </div>
+      </div>
+
+      {/* ledger */}
+      <div className="rounded-2xl border overflow-hidden" style={{ background: "white", borderColor: "#E8E2D4" }}>
+        <div className="px-3 py-2 text-sm font-extrabold" style={{ background: "#F2EEE3", color: "#1B1B18" }}>Libro (huling galaw)</div>
+        {state.ledger.length === 0 ? (
+          <p className="p-3 text-xs" style={{ color: "#8A9184" }}>Wala pang tala. Mag-log ng benta o umorder para magsimula ang libro mo.</p>
+        ) : (
+          state.ledger.slice(0, 12).map((e, i) => (
+            <div key={i} className="px-3 py-2 flex items-center justify-between text-sm" style={{ borderTop: "1px solid #F0EBDD" }}>
+              <div className="min-w-0">
+                <div className="font-bold truncate" style={{ color: "#1B1B18" }}>{e.label}</div>
+                <div className="text-[10px]" style={{ color: "#8A9184" }}>
+                  {new Date(e.when).toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </div>
+              </div>
+              <span className="font-extrabold" style={{ color: e.amount > 0 ? "#0E7C66" : e.amount < 0 ? "#B3222F" : "#8A9184" }}>
+                {e.amount > 0 ? "+" : ""}{e.amount === 0 ? "↔" : peso(Math.abs(e.amount))}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- credit: loans + BNPL ----------------
+function Credit({ state, creditFree, takeLoan, payLoan, startBnpl, payBnpl }) {
+  return (
+    <div className="space-y-4 pb-4">
+      {/* puhunan loans */}
+      <section>
+        <h3 className="disp font-extrabold" style={{ color: "#1B1B18" }}>Puhunan loan</h3>
+        <p className="text-[11px] mb-2" style={{ color: "#6B7265" }}>
+          Flat 5% fee, 4 na lingguhang hulog mula sa SukiWallet. Deretso sa PHPC ang pera.
+        </p>
+        <div className="flex gap-2">
+          {[2000, 5000, 10000].map((v) => (
+            <button key={v} onClick={() => takeLoan(v)} disabled={v > creditFree}
+              className="flex-1 rounded-xl py-3 border-2 disabled:opacity-40"
+              style={{ borderColor: "#0F4C3A", background: "white" }}>
+              <span className="disp font-extrabold block" style={{ color: "#0F4C3A" }}>{peso(v)}</span>
+              <span className="text-[10px] font-bold" style={{ color: "#8A9184" }}>{peso(r2((v * 1.05) / 4))}/linggo</span>
+            </button>
+          ))}
+        </div>
+        {state.loans.map((l) => (
+          <div key={l.id} className="mt-2 rounded-xl p-3 border flex items-center justify-between" style={{ background: "white", borderColor: "#E8E2D4" }}>
+            <div>
+              <div className="text-sm font-bold" style={{ color: "#1B1B18" }}>Loan {peso(l.principal)}</div>
+              <div className="text-[11px]" style={{ color: "#6B7265" }}>Balanse {peso(l.balance)} · {l.paymentsLeft} hulog na lang</div>
+            </div>
+            <button onClick={() => payLoan(l.id)} className="rounded-xl px-3 py-2 text-xs font-extrabold" style={{ background: "#0F4C3A", color: "#FFC53D" }}>
+              Hulog {peso(l.weekly)}
+            </button>
+          </div>
+        ))}
+      </section>
+
+      {/* BNPL shop */}
+      <section>
+        <h3 className="disp font-extrabold" style={{ color: "#1B1B18" }}>Hulugan (buy now, pay later)</h3>
+        <p className="text-[11px] mb-2" style={{ color: "#6B7265" }}>
+          20% down, 6 buwan, 3%/buwan add-on. Kasama sa delivery ng supplies mo.
+        </p>
+        <div className="space-y-2">
+          {BNPL_ITEMS.map((it) => {
+            const down = r2(it.price * 0.2);
+            const monthly = r2((it.price - down) * (1 + BNPL_ADDON * BNPL_MONTHS) / BNPL_MONTHS);
+            const active = state.bnpl.find((b) => b.itemId === it.id);
+            return (
+              <div key={it.id} className="rounded-xl p-3 border" style={{ background: "white", borderColor: "#E8E2D4" }}>
+                <div className="flex gap-3 items-start">
+                  <span className="text-2xl">{it.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold" style={{ color: "#1B1B18" }}>{it.name}</div>
+                    <div className="text-[11px]" style={{ color: "#6B7265" }}>{it.why}</div>
+                    <div className="text-[11px] mt-1 font-bold" style={{ color: "#0F4C3A" }}>
+                      {peso(it.price)} · down {peso(down)} · {peso(monthly)}/buwan × 6
+                    </div>
+                  </div>
+                  {!active ? (
+                    <button onClick={() => startBnpl(it)} className="rounded-xl px-3 py-2 text-xs font-extrabold" style={{ background: "#D7263D", color: "white" }}>
+                      Hulugan
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-extrabold px-2 py-1 rounded-lg" style={{ background: "#E9F2EC", color: "#0F4C3A" }}>Aktibo</span>
+                  )}
+                </div>
+                {active && (
+                  <div className="mt-2 flex items-center justify-between rounded-lg px-2.5 py-2" style={{ background: "#F2EEE3" }}>
+                    <span className="text-[11px] font-bold" style={{ color: "#1B1B18" }}>
+                      {active.monthsLeft} buwan na lang · bayad na {peso(active.paid)} / {peso(active.total)}
+                    </span>
+                    <button onClick={() => payBnpl(active.id)} className="rounded-lg px-2.5 py-1.5 text-[11px] font-extrabold" style={{ background: "#0F4C3A", color: "#FFC53D" }}>
+                      Hulog {peso(active.monthly)}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ---------------- micro-insurance ----------------
+function Insurance({ state, buyPolicy }) {
+  return (
+    <div className="space-y-2 pb-4">
+      <p className="text-[11px] px-1" style={{ color: "#6B7265" }}>
+        Micro-insurance na binabayaran buwan-buwan mula sa SukiWallet. Walang medical exam, walang requirements maliban sa tindahan mo.
+      </p>
+      {INSURANCE.map((pol) => {
+        const active = state.policies.find((p) => p.id === pol.id);
+        return (
+          <div key={pol.id} className="rounded-xl p-3 border flex gap-3 items-start" style={{ background: "white", borderColor: active ? "#0E7C66" : "#E8E2D4" }}>
+            <span className="text-2xl">{pol.emoji}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-extrabold" style={{ color: "#1B1B18" }}>{pol.name}</div>
+              <div className="text-[11px]" style={{ color: "#6B7265" }}>{pol.desc}</div>
+              <div className="text-[11px] mt-1 font-bold" style={{ color: "#0F4C3A" }}>
+                Cover {peso(pol.cover)} · {peso(pol.premium)}/buwan
+              </div>
+            </div>
+            {active ? (
+              <span className="text-[10px] font-extrabold px-2 py-1 rounded-lg" style={{ background: "#E9F2EC", color: "#0F4C3A" }}>
+                Aktibo ✓
+              </span>
+            ) : (
+              <button onClick={() => buyPolicy(pol)} className="rounded-xl px-3 py-2 text-xs font-extrabold" style={{ background: "#0E7C66", color: "white" }}>
+                Kunin
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<SukiDirect />);
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
+</body>
+</html>
